@@ -7,7 +7,7 @@ A 2-hour lab that builds a human-in-the-loop pull-request review agent in **Lang
 > 3. Confidence ~58% → escalate: show context + specific questions for the reviewer.
 > 4. Every interaction is written to a SQLite audit trail; full sessions can be replayed.
 
-Students complete **4 exercises** (`exercises/`) that together build the full system. Each exercise has a runnable skeleton with `# TODO:` markers — your job is to fill them in.
+This repository contains four completed LangGraph exercises and a Streamlit review UI.
 
 ## Background — what problem does this solve?
 
@@ -26,7 +26,7 @@ This lab builds an agent that auto-triages every PR:
 1. The LLM reads the diff and produces a structured review with a **self-reported confidence score**.
 2. **Confidence > 72%** → the agent posts the review comment itself; no human in the loop.
 3. **58–72%** → the agent pauses (`interrupt()`) and shows the reviewer the diff + LLM reasoning + a one-click **approve / reject / edit** panel. On approve, the comment posts.
-4. **< 58%** → the agent **escalates strongly**. It shows the reviewer *specific questions the LLM is uncertain about* ("Why MD5? Is `SYNC_URL` meant to be HTTPS in production?") and waits for answers. Then it re-asks the LLM with the answers in context and posts a **refined** review.
+4. **< 58%** → the agent **escalates strongly**. It shows the reviewer *specific questions the LLM is uncertain about* ("Why MD5? Is `SYNC_URL` meant to be HTTPS in production?") and waits for answers. Then it re-asks the LLM with the answers in context and asks for final approval before posting the **refined** review.
 
 Every step writes a row to a structured audit table — every routing decision, every human interaction, every LLM call — so the team can replay any session for compliance or debugging.
 
@@ -42,7 +42,7 @@ flowchart TD
     Escalate --> Synth[synthesize]
     Auto --> Commit[commit]
     Human --> Commit
-    Synth --> Commit
+    Synth --> Human
 ```
 
 Every node also writes one row to `audit_events`. The graph state is persisted by `AsyncSqliteSaver`, so an interrupted session can resume from exactly where it stopped — even after the process is killed.
@@ -57,7 +57,7 @@ Every node also writes one row to `audit_events`. The graph state is persisted b
 - Confidence-based routing
 - PostgreSQL audit trail
 
-**What this scaffolding already covers.** Exercises 1–4 deliver the HITL agent, confidence-based routing, and the structured audit trail. Two implementation notes:
+**Implementation notes.** Exercises 1–4 deliver the HITL agent, confidence-based routing, and the structured audit trail:
 - The lab uses **SQLite** (`./hitl_audit.db`) instead of PostgreSQL for zero-setup. The schema is row-oriented with first-class columns — the same `AuditEntry` queries transfer to Postgres in production by swapping the checkpointer and connection string.
 - The approval UI is currently a terminal panel (Rich). The Streamlit UI is the fifth exercise — see [Exercise 5](#exercise-5--streamlit-approval-ui-apppy) below.
 
@@ -80,7 +80,7 @@ Thresholds live in `common/schemas.py` (`AUTO_APPROVE_THRESHOLD = 0.73`, `ESCALA
 ├── .env.example
 │
 ├── common/                  # shared utilities — provided, don't modify
-│   ├── llm.py               # ChatOpenAI factory (OpenRouter)
+│   ├── llm.py               # OpenRouter / hosted Ollama factory
 │   ├── github.py            # httpx REST API client: fetch_pr / post_review_comment
 │   ├── db.py                # aiosqlite connection + write_audit_event
 │   └── schemas.py           # ReviewState (TypedDict) + PRAnalysis + AuditEntry (Pydantic)
@@ -100,14 +100,14 @@ Thresholds live in `common/schemas.py` (`AUTO_APPROVE_THRESHOLD = 0.73`, `ESCALA
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) package manager
-- An [OpenRouter](https://openrouter.ai/keys) API key (free tier has $1 credit)
-- A GitHub Personal Access Token — see next section
+- An OpenRouter key or a hosted Ollama API key
+- A GitHub Personal Access Token to post comments — see next section. Public PRs can be fetched without one.
 
 No Docker, no Postgres install, no `gh` CLI. The agent talks to GitHub directly via the REST API. Audit + checkpointer state both live in a single SQLite file (`./hitl_audit.db`) created automatically on first run.
 
 ## Get a GitHub Personal Access Token (PAT)
 
-The agent calls the GitHub REST API directly to **read PR diffs** and **post review comments**. A PAT is required.
+The agent calls the GitHub REST API directly to read PR diffs and post review comments. Public PRs can be read without a PAT; posting comments requires one.
 
 1. Open <https://github.com/settings/tokens/new> (classic — simplest).
 2. Fill in:
@@ -133,8 +133,13 @@ The agent calls the GitHub REST API directly to **read PR diffs** and **post rev
 ```bash
 git clone <lab-repo-url> && cd Day27-Track3-HITL
 uv sync                                     # install Python deps
-cp .env.example .env && $EDITOR .env        # set OPENROUTER_API_KEY and GITHUB_TOKEN
+cp .env.example .env && $EDITOR .env        # set one LLM provider and GITHUB_TOKEN
 ```
+
+For the hosted Ollama API, set `LLM_PROVIDER=ollama`, `OLLAMA_API_KEY`, and
+`LLM_MODEL=gpt-oss:120b` in `.env`. The agent uses `https://ollama.com/api/chat`.
+The `.env` file is ignored by Git. Add `GITHUB_TOKEN` only when you intend to
+post review comments.
 
 The SQLite file `hitl_audit.db` is created on demand when exercise 4 runs.
 
@@ -151,7 +156,7 @@ PR #1 is mechanical (~40 lines) with one open question (schema migration). PR #2
 
 ## The 5 exercises
 
-Do them in order — each builds on the previous. Open the file, read all `# TODO:` comments top-to-bottom, fill them in, then run the command shown.
+Run them in order — each builds on the previous.
 
 ### Exercise 1 — Confidence routing (`exercise_1_confidence.py`)
 
@@ -256,16 +261,13 @@ The same three confidence buckets apply, but the *human experience* changes per 
 - A small "recent sessions" sidebar driven by `audit.replay.list_threads`.
 - Add `streamlit` to `pyproject.toml` dependencies.
 
-A skeleton with `# TODO:` markers is provided in `app.py`. Run with:
+Run the completed UI with:
 
 ```bash
 uv run streamlit run app.py
 ```
 
-The skeleton wires up the Streamlit boilerplate (session state, page layout, top-level form). You fill in:
-- The graph invocation
-- The two interrupt renderers (`render_approval_card`, `render_escalation_card`)
-- The resume logic
+The UI stores its thread ID in session state and the URL query string. Recent sessions can be reopened from the sidebar.
 
 ## How the assignment maps to files
 

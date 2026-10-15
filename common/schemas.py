@@ -48,7 +48,7 @@ class PRAnalysis(BaseModel):
     comments: list[ReviewComment] = Field(default_factory=list)
     confidence: float = Field(
         ge=0.0, le=1.0,
-        description="Self-reported confidence that the review is complete and correct",
+        description="Confidence this review is complete enough to post without more human context, considering code risk",
     )
     confidence_reasoning: str = Field(
         description="Why the model picked that confidence value"
@@ -132,8 +132,10 @@ class ReviewState(TypedDict, total=False):
     # Populated by HITL nodes
     human_choice: HumanChoice | None
     human_feedback: str | None
+    edited_comment_body: str | None
     escalation_answers: dict[str, str] | None
 
     # Populated by commit / final nodes
     posted_comment_body: str | None
+    posted_comment_url: str | None
     final_action: str | None

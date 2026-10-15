@@ -32,7 +32,9 @@ async def list_threads() -> None:
                    pr_url,
                    MIN(timestamp)        AS started,
                    MAX(timestamp)        AS last_event,
-                   MAX(risk_level)       AS worst_risk,
+                   CASE WHEN SUM(risk_level='high') > 0 THEN 'high'
+                        WHEN SUM(risk_level='med') > 0 THEN 'med'
+                        ELSE 'low' END    AS worst_risk,
                    COUNT(*)              AS events
               FROM audit_events
              GROUP BY thread_id, pr_url

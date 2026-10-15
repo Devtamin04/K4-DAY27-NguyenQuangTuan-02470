@@ -42,13 +42,16 @@ def _token() -> str:
     return tok
 
 
-def _headers(accept: str = "application/vnd.github+json") -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {_token()}",
+def _headers(accept: str = "application/vnd.github+json", *, require_token: bool = False) -> dict[str, str]:
+    headers = {
         "Accept": accept,
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "Day27-HITL-Lab",
     }
+    token = _token() if require_token else os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 
 def parse_pr_url(pr_url: str) -> tuple[str, str, int]:
@@ -93,7 +96,7 @@ def fetch_pr(pr_url: str) -> PullRequest:
     )
 
 
-def post_review_comment(pr_url: str, body: str) -> None:
+def post_review_comment(pr_url: str, body: str) -> str:
     """Post a top-level discussion comment back to the PR.
 
     Uses the Issues endpoint (PRs are issues under the hood for top-level
@@ -105,5 +108,6 @@ def post_review_comment(pr_url: str, body: str) -> None:
     owner, repo, number = parse_pr_url(pr_url)
     url = f"{API}/repos/{owner}/{repo}/issues/{number}/comments"
     with httpx.Client(timeout=30.0) as client:
-        resp = client.post(url, headers=_headers(), json={"body": body})
+        resp = client.post(url, headers=_headers(require_token=True), json={"body": body})
         resp.raise_for_status()
+        return resp.json()["html_url"]
